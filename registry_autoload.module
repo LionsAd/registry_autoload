@@ -19,18 +19,61 @@ function registry_autoload_boot() {
  * Implements hook_module_implements_alter().
  */
 function registry_autoload_module_implements_alter(&$implementations, $hook) {
-  // Move our hook implementation to the bottom, so we are called last.
-  if ($hook == 'registry_files_alter') {
-    $group = $implementations['registry_autoload'];
-    unset($implementations['registry_autoload']);
-    $implementations['registry_autoload'] = $group;
+  if ('registry_files_alter' === $hook) {
+    /* @see _registry_autoload_first_registry_files_alter() */
+    $implementations = array('_registry_autoload_first' => FALSE) +
+      $implementations;
+
+    /* @see _registry_autoload_last_registry_files_alter() */
+    $implementations['_registry_autoload_last'] = FALSE;
   }
 }
 
 /**
- * Implements hook_registry_files_alter().
+ * Custom implementation of hook_registry_files_alter().
+ *
+ * @param array $files
+ *   List of files to be parsed by the registry.
+ * @param $indexed_modules
+ *    An array containing all module information stored in the {system} table.
  */
-function registry_autoload_registry_files_alter(&$files, $indexed_modules) {
+function _registry_autoload_first_registry_files_alter(array &$files, array $indexed_modules) {
+  // Get the files registry.
+  $registry = _registry_autoload_get_registry($indexed_modules);
+
+  // Update the database.
+  _registry_autoload_update_files_registry($files, $registry);
+}
+
+/**
+ * Custom implementation of hook_registry_files_alter().
+ *
+ * @param array $files
+ *   List of files to be parsed by the registry.
+ * @param $indexed_modules
+ *    An array containing all module information stored in the {system} table.
+ */
+function _registry_autoload_last_registry_files_alter(array &$files, array $indexed_modules) {
+  // Get the files registry.
+  $registry = _registry_autoload_get_registry($indexed_modules);
+
+  // Give other modules a chance to alter the registry before we save it.
+  drupal_alter('registry_autoload_registry', $registry);
+
+  // Update the database.
+  _registry_autoload_update_files_registry($files, $registry);
+}
+
+/**
+ * Get the files registry.
+ *
+ * @param $indexed_modules
+ *    An array containing all module information stored in the {system} table.
+ *
+ * @return array
+ *   The files registry.
+ */
+function _registry_autoload_get_registry(array $indexed_modules) {
   $parsed_files = registry_get_parsed_files();
   $autoload_searcher = new RegistryAutoloadSearcher($parsed_files);
 
@@ -80,9 +123,18 @@ function registry_autoload_registry_files_alter(&$files, $indexed_modules) {
     $registry = array_merge($registry, $autoload_searcher->processFiles($class_files, $module));
   }
 
-  // Give other modules a chance to alter the registry before we save it.
-  drupal_alter('registry_autoload_registry', $registry);
+  return $registry;
+}
 
+/**
+ * Update the registry and registry_file tables.
+ *
+ * @param array $files
+ *   The files array.
+ * @param array $registry
+ *   The files registry.
+ */
+function _registry_autoload_update_files_registry(array &$files, array $registry) {
   foreach ($registry as $entry) {
     // Add the files to the registry.
     // Note: Because the hash is the same it won't try to reparse it.

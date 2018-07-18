@@ -22,3 +22,10 @@ function registry_autoload_test_class_loading() {
 
   unset($x);
 }
+
+/**
+ * Implements hook_boot().
+ */
+function registry_autoload_test_boot() {
+  // meh.
+}
